@@ -8,6 +8,7 @@ import { renderRaceSetup } from './ui/RaceSetup';
 import { RaceView } from './ui/RaceView';
 import { renderResults } from './ui/ResultsScreen';
 import { renderSettings } from './ui/SettingsScreen';
+import { renderTrackCreator } from './ui/TrackCreator';
 
 class App {
   private readonly root: HTMLElement;
@@ -28,7 +29,7 @@ class App {
   }
 
   private showMenu = (): void => {
-    this.mount(renderMenu(() => this.startRace(this.settings), this.showSetup, this.showSettings));
+    this.mount(renderMenu(() => this.startRace(this.settings), this.showSetup, this.showTrackCreator, this.showSettings));
   };
 
   private showSetup = (): void => {
@@ -41,6 +42,14 @@ class App {
 
   private showSettings = (): void => {
     this.mount(renderSettings(this.showMenu));
+  };
+
+  private showTrackCreator = (): void => {
+    this.mount(renderTrackCreator(this.showMenu, (trackId) => {
+      this.settings = { ...this.settings, trackId };
+      saveSettings(this.settings);
+      this.showSetup();
+    }));
   };
 
   private startRace(settings: RaceSettings): void {

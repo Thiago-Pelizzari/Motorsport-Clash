@@ -1,10 +1,11 @@
 import { DIFFICULTY, TYRES } from '../game/gameConfig';
-import { TRACKS } from '../tracks';
-import type { Difficulty, RaceSettings, TyreType } from '../types/race';
+import { getAvailableTracks } from '../tracks';
+import type { Difficulty, RaceSettings, Track, TyreType } from '../types/race';
 
 const LAP_PRESETS = [3, 5, 10, 20, 30, 50];
 
 export function renderRaceSetup(initial: RaceSettings, onStart: (settings: RaceSettings) => void, onBack: () => void): HTMLElement {
+  const tracks = getAvailableTracks();
   const screen = document.createElement('main');
   screen.className = 'setup-screen shell';
   screen.innerHTML = `
@@ -15,14 +16,15 @@ export function renderRaceSetup(initial: RaceSettings, onStart: (settings: RaceS
     </header>
     <form class="setup-form">
       <section class="setup-section">
-        <div class="section-heading"><span>01</span><div><h2>Escolha o circuito</h2><p>Três traçados, três desafios diferentes.</p></div></div>
+        <div class="section-heading"><span>01</span><div><h2>Escolha o circuito</h2><p>Circuitos clássicos, modelos em blocos e suas próprias criações.</p></div></div>
         <div class="track-grid">
-          ${TRACKS.map((track) => `
+          ${tracks.map((track) => `
             <label class="track-card ${track.id === initial.trackId ? 'is-selected' : ''}" style="--track-accent:${track.accent}">
               <input type="radio" name="track" value="${track.id}" ${track.id === initial.trackId ? 'checked' : ''}>
               <div class="track-map" data-track-preview="${track.id}"></div>
               <span class="track-location">${track.location}</span>
               <h3>${track.name}</h3>
+              ${track.source === 'custom' ? '<span class="custom-track-badge">SUA PISTA</span>' : track.source === 'blocks' ? '<span class="custom-track-badge">MODELO EM BLOCOS</span>' : ''}
               <p>${track.description}</p>
               <div class="track-stats">
                 <span><b>${(track.length / 1000).toFixed(2)}</b> KM</span>
@@ -74,7 +76,7 @@ export function renderRaceSetup(initial: RaceSettings, onStart: (settings: RaceS
     </form>
   `;
 
-  drawTrackPreviews(screen);
+  drawTrackPreviews(screen, tracks);
   screen.querySelector('[data-back]')?.addEventListener('click', onBack);
   screen.querySelectorAll<HTMLInputElement>('input[name="track"]').forEach((input) => {
     input.addEventListener('change', () => {
@@ -124,9 +126,9 @@ export function renderRaceSetup(initial: RaceSettings, onStart: (settings: RaceS
   return screen;
 }
 
-function drawTrackPreviews(container: HTMLElement): void {
+function drawTrackPreviews(container: HTMLElement, tracks: Track[]): void {
   container.querySelectorAll<HTMLElement>('[data-track-preview]').forEach((preview) => {
-    const track = TRACKS.find((item) => item.id === preview.dataset.trackPreview);
+    const track = tracks.find((item) => item.id === preview.dataset.trackPreview);
     if (!track) return;
     const svgPoints = track.points.map((point) => `${point.x},${point.y}`).join(' ');
     preview.innerHTML = `<svg viewBox="50 45 900 540" aria-hidden="true"><polyline points="${svgPoints}" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/><line x1="${track.points[0].x - 15}" y1="${track.points[0].y}" x2="${track.points[0].x + 15}" y2="${track.points[0].y}" stroke="white" stroke-width="8"/></svg>`;

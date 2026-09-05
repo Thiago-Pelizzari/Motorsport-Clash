@@ -26,4 +26,6 @@ npm run preview
 - adversários com habilidade, consistência e estratégia de pneus;
 - classificação ao vivo, velocidades 1×/2×/4×, pausa e resultado completo;
 - câmera com zoom de 1× a 4×, movimentação por arraste e distância em metros entre os carros;
+- criador de pistas por blocos com retas, curvas, cotovelos e chicanes, além de três modelos prontos;
+- pistas personalizadas salvas localmente e disponíveis diretamente no criador de corridas;
 - preferências e última configuração persistidas no `localStorage`.

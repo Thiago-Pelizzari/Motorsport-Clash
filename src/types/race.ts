@@ -3,6 +3,7 @@ export type StrategyMode = 'conserve' | 'normal' | 'attack';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export type SimulationSpeed = 0 | 1 | 2 | 4;
 export type RacePhase = 'ready' | 'running' | 'paused' | 'finished';
+export type TrackBlockType = 'straight' | 'short' | 'left45' | 'right45' | 'left90' | 'right90' | 'chicaneLeft' | 'chicaneRight';
 
 export interface Point {
   x: number;
@@ -22,6 +23,8 @@ export interface Track {
   overtakeChance: number;
   accent: string;
   points: Point[];
+  source?: 'classic' | 'blocks' | 'custom';
+  blocks?: TrackBlockType[];
 }
 
 export interface PlayerCarSettings {

@@ -1,4 +1,6 @@
 import type { Track } from '../types/race';
+import { loadCustomTracks } from '../storage/trackStorage';
+import { BLOCK_TRACKS } from './blockTracks';
 
 export const TRACKS: Track[] = [
   {
@@ -59,6 +61,10 @@ export const TRACKS: Track[] = [
   },
 ];
 
+export function getAvailableTracks(): Track[] {
+  return [...TRACKS, ...BLOCK_TRACKS, ...loadCustomTracks()];
+}
+
 export function getTrack(id: string): Track {
-  return TRACKS.find((track) => track.id === id) ?? TRACKS[0];
+  return getAvailableTracks().find((track) => track.id === id) ?? TRACKS[0];
 }

@@ -1,4 +1,4 @@
-export function renderMenu(onQuickRace: () => void, onCreateRace: () => void, onSettings: () => void): HTMLElement {
+export function renderMenu(onQuickRace: () => void, onCreateRace: () => void, onTrackCreator: () => void, onSettings: () => void): HTMLElement {
   const screen = document.createElement('main');
   screen.className = 'menu-screen';
   screen.innerHTML = `
@@ -16,14 +16,18 @@ export function renderMenu(onQuickRace: () => void, onCreateRace: () => void, on
       <button class="button button--secondary" data-action="create">
         <span class="button-index">02</span><span>CRIAR CORRIDA</span><b>＋</b>
       </button>
+      <button class="button button--secondary" data-action="track-creator">
+        <span class="button-index">03</span><span>CRIADOR DE PISTAS</span><b>▦</b>
+      </button>
       <button class="button button--ghost" data-action="settings">
-        <span class="button-index">03</span><span>CONFIGURAÇÕES</span><b>⚙</b>
+        <span class="button-index">04</span><span>CONFIGURAÇÕES</span><b>⚙</b>
       </button>
     </nav>
     <footer class="menu-footer"><span>OFFLINE · SINGLE PLAYER</span><span>v0.1 MVP</span></footer>
   `;
   screen.querySelector('[data-action="play"]')?.addEventListener('click', onQuickRace);
   screen.querySelector('[data-action="create"]')?.addEventListener('click', onCreateRace);
+  screen.querySelector('[data-action="track-creator"]')?.addEventListener('click', onTrackCreator);
   screen.querySelector('[data-action="settings"]')?.addEventListener('click', onSettings);
   return screen;
 }
