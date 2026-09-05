@@ -1,6 +1,8 @@
 import { updateAI } from './AIController';
 import { createCars } from './CarFactory';
+import { resolveCarCollisions } from './CollisionSystem';
 import { GAME_CONFIG, STRATEGIES, TYRES } from './gameConfig';
+import { calculateRacingLine } from './RacingLineSystem';
 import type { CarState, RaceSettings, RaceState, SimulationSpeed, StrategyMode, Track, TyreType } from '../types/race';
 import { SeededRandom } from '../utils/random';
 
@@ -60,10 +62,16 @@ export class RaceEngine {
 
     for (const car of this.state.cars) {
       if (car.finished) continue;
+      car.collisionCooldown = Math.max(0, car.collisionCooldown - deltaTime);
       updateAI(car, this.track, this.state.totalLaps, deltaTime, this.random);
       this.updateCar(car, deltaTime);
     }
 
+    const collisions = this.state.elapsedTime > 2.5
+      ? resolveCarCollisions(this.state.cars, this.track.length)
+      : [];
+    const strongestCollision = collisions.sort((first, second) => second.impact - first.impact)[0];
+    if (strongestCollision) this.announce(`Contato entre #${strongestCollision.first.number} e #${strongestCollision.second.number}`);
     this.updatePositions();
     if (this.state.cars.every((car) => car.finished)) {
       this.state.phase = 'finished';
@@ -117,7 +125,8 @@ export class RaceEngine {
     const driverPerformance = 0.93 + car.driver.skill * 0.09;
     const variation = 1 + Math.sin(this.state.elapsedTime * 0.2 + car.variationPhase) * (1 - car.driver.consistency) * 0.045;
     const traffic = this.trafficFactor(car, deltaTime);
-    return car.baseSpeed * driverPerformance * tyre.speed * tyrePerformance * strategy.speed * variation * traffic;
+    const carCondition = 0.94 + car.condition * 0.06;
+    return car.baseSpeed * driverPerformance * tyre.speed * tyrePerformance * strategy.speed * variation * traffic * carCondition;
   }
 
   private trafficFactor(car: CarState, deltaTime: number): number {
@@ -125,22 +134,25 @@ export class RaceEngine {
       .filter((other) => other.id !== car.id && !other.finished && other.distance > car.distance)
       .sort((a, b) => a.distance - b.distance)[0];
     if (!ahead) {
-      car.targetLaneOffset = 0;
+      car.targetLaneOffset = calculateRacingLine(car, this.track);
       return 1;
     }
     const gap = ahead.distance - car.distance;
     if (gap > GAME_CONFIG.trafficRangeMetres) {
-      car.targetLaneOffset *= Math.max(0, 1 - deltaTime * 2);
+      car.targetLaneOffset = calculateRacingLine(car, this.track);
       return 1;
     }
 
     const advantage = car.speed - ahead.speed + (car.driver.skill - ahead.driver.skill) * 18;
     const chance = this.track.overtakeChance * car.driver.aggression * Math.max(0.05, 0.35 + advantage / 30);
+    const side = Math.sin(car.variationPhase + car.lap * 1.7 + this.state.elapsedTime * 0.09) >= 0 ? 1 : -1;
     if (this.random.next() < chance * deltaTime) {
-      car.targetLaneOffset = car.position % 2 === 0 ? 12 : -12;
+      const laneLimit = GAME_CONFIG.maximumLaneOffset ?? 17;
+      car.targetLaneOffset = Math.max(-laneLimit, Math.min(laneLimit, ahead.laneOffset + side * 16));
       return 1.018;
     }
-    car.targetLaneOffset = car.position % 2 === 0 ? 7 : -7;
+    const laneLimit = GAME_CONFIG.maximumLaneOffset ?? 17;
+    car.targetLaneOffset = Math.max(-laneLimit, Math.min(laneLimit, ahead.laneOffset + side * 4));
     return GAME_CONFIG.trafficSpeedPenalty;
   }
 

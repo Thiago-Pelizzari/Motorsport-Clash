@@ -202,7 +202,7 @@ export class RaceView {
         <div class="leader-row ${car.isPlayer ? 'is-player' : ''}">
           <strong>${car.position}</strong>
           <span class="leader-dot" style="--car-color:${car.color}">${car.number}</span>
-          <div><b>${car.name}</b><small>V${Math.min(this.engine.state.totalLaps, car.lap + 1)} · ${TYRES[car.tyreType].label}</small></div>
+          <div><b>${car.name}</b><small>V${Math.min(this.engine.state.totalLaps, car.lap + 1)} · ${TYRES[car.tyreType].label}${car.collisionCooldown > 0 ? ' · CONTATO' : ''}</small></div>
           <time>${status}</time>
         </div>`;
     }).join('');
@@ -219,7 +219,7 @@ export class RaceView {
       const pitStatus = car.pitTimeRemaining > 0 ? `BOXES ${car.pitTimeRemaining.toFixed(1)}s` : car.pendingPitTyre ? 'CANCELAR BOX' : 'ENTRAR NOS BOXES';
       return `
         <article class="strategy-card" style="--car-color:${car.color}">
-          <div class="strategy-car"><span>#${car.number}</span><div><b>${car.position}º LUGAR</b><small>${Math.round(car.speed)} km/h</small></div></div>
+          <div class="strategy-car"><span>#${car.number}</span><div><b>${car.position}º LUGAR</b><small>${Math.round(car.speed)} km/h · carro ${Math.round(car.condition * 100)}%</small></div></div>
           <div class="tyre-status">
             <span class="tyre-ring" style="--tyre-color:${tyre.color};--life:${Math.round(car.tyreCondition * 100) * 3.6}deg"></span>
             <div><small>PNEU ${tyre.label.toUpperCase()}</small><strong>${Math.round(car.tyreCondition * 100)}%</strong></div>

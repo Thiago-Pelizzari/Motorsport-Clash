@@ -24,6 +24,7 @@ npm run preview
 - motor independente da interface e baseado em `deltaTime`;
 - pneus macio, médio e duro, modos de ritmo e pit stops;
 - adversários com habilidade, consistência e estratégia de pneus;
+- linhas de corrida dinâmicas por piloto e colisões com separação, perda de velocidade e condição;
 - classificação ao vivo, velocidades 1×/2×/4×, pausa e resultado completo;
 - câmera com zoom de 1× a 4×, movimentação por arraste e distância em metros entre os carros;
 - criador de pistas por blocos com retas, curvas, cotovelos e chicanes, além de três modelos prontos;

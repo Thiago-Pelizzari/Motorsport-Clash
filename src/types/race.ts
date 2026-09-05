@@ -93,6 +93,8 @@ export interface CarState {
   laps: LapData[];
   aiDecisionTimer: number;
   variationPhase: number;
+  collisionCooldown: number;
+  contactCount: number;
 }
 
 export interface RaceState {

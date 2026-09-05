@@ -1,4 +1,4 @@
-import { TYRES } from '../game/gameConfig';
+import { GAME_CONFIG, TYRES } from '../game/gameConfig';
 import { TrackGeometry } from '../game/TrackGeometry';
 import type { Point, RaceState, Track } from '../types/race';
 
@@ -218,6 +218,23 @@ export class TrackCanvas {
       const radiusScale = 1 / Math.sqrt(this.zoom);
       context.save();
       context.translate(position.x, position.y);
+      if (car.collisionCooldown > 0) {
+        const collisionLife = car.collisionCooldown / (GAME_CONFIG.collisionCooldown ?? 0.75);
+        context.globalAlpha = Math.max(0.2, collisionLife);
+        context.beginPath();
+        context.arc(0, 0, (20 + (1 - collisionLife) * 8) * radiusScale, 0, Math.PI * 2);
+        context.strokeStyle = '#ffb627';
+        context.lineWidth = 3 * radiusScale;
+        context.stroke();
+        for (let spark = 0; spark < 5; spark += 1) {
+          const sparkAngle = car.variationPhase + spark * (Math.PI * 2 / 5);
+          context.beginPath();
+          context.moveTo(Math.cos(sparkAngle) * 16 * radiusScale, Math.sin(sparkAngle) * 16 * radiusScale);
+          context.lineTo(Math.cos(sparkAngle) * 24 * radiusScale, Math.sin(sparkAngle) * 24 * radiusScale);
+          context.stroke();
+        }
+        context.globalAlpha = 1;
+      }
       if (car.isPlayer) {
         context.beginPath();
         context.arc(0, 0, 18 * radiusScale, 0, Math.PI * 2);

@@ -53,4 +53,19 @@ describe('RaceEngine', () => {
     engine.update(10);
     expect(engine.state.elapsedTime).toBe(elapsed);
   });
+
+  it('mantém todo o estado numérico válido após contatos no pelotão', () => {
+    for (let seed = 1; seed <= 80; seed += 1) {
+      const config = settings({ laps: 2, competitors: 20 });
+      const engine = new RaceEngine(config, getTrack(config.trackId), seed);
+      engine.start();
+      engine.setSimulationSpeed(4);
+      for (let step = 0; step < 600; step += 1) engine.update(1 / 30);
+      engine.state.cars.forEach((car) => {
+        expect(Number.isFinite(car.distance), `seed ${seed}, carro #${car.number}: distância`).toBe(true);
+        expect(Number.isFinite(car.speed), `seed ${seed}, carro #${car.number}: velocidade`).toBe(true);
+        expect(Number.isFinite(car.laneOffset), `seed ${seed}, carro #${car.number}: linha`).toBe(true);
+      });
+    }
+  });
 });

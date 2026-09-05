@@ -44,6 +44,8 @@ function createBaseCar(index: number, number: number, name: string, color: strin
     laps: [],
     aiDecisionTimer: random.range(0.2, GAME_CONFIG.aiReactionInterval),
     variationPhase: random.range(0, Math.PI * 2),
+    collisionCooldown: 0,
+    contactCount: 0,
   };
 }
 
