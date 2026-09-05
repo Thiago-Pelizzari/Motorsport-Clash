@@ -1,36 +1,91 @@
 import { TYRES } from '../game/gameConfig';
 import { TrackGeometry } from '../game/TrackGeometry';
-import type { RaceState, Track } from '../types/race';
+import type { Point, RaceState, Track } from '../types/race';
 
 export class TrackCanvas {
   private readonly canvas: HTMLCanvasElement;
   private readonly context: CanvasRenderingContext2D;
   private readonly geometry: TrackGeometry;
   private readonly track: Track;
+  private readonly onZoomChange: (zoom: number) => void;
   private resizeObserver: ResizeObserver;
+  private zoom = 1;
+  private cameraX = 500;
+  private cameraY = 310;
+  private dragging = false;
+  private pointerX = 0;
+  private pointerY = 0;
+  private lastState: RaceState | null = null;
 
-  constructor(canvas: HTMLCanvasElement, track: Track) {
+  constructor(canvas: HTMLCanvasElement, track: Track, onZoomChange: (zoom: number) => void) {
     this.canvas = canvas;
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Canvas 2D não disponível');
     this.context = context;
     this.track = track;
+    this.onZoomChange = onZoomChange;
     this.geometry = new TrackGeometry(track);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
+    canvas.addEventListener('wheel', this.handleWheel, { passive: false });
+    canvas.addEventListener('pointerdown', this.handlePointerDown);
+    canvas.addEventListener('pointermove', this.handlePointerMove);
+    canvas.addEventListener('pointerup', this.handlePointerUp);
+    canvas.addEventListener('pointercancel', this.handlePointerUp);
+    canvas.addEventListener('dblclick', this.resetView);
     this.resize();
   }
 
   destroy(): void {
     this.resizeObserver.disconnect();
+    this.canvas.removeEventListener('wheel', this.handleWheel);
+    this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
+    this.canvas.removeEventListener('pointermove', this.handlePointerMove);
+    this.canvas.removeEventListener('pointerup', this.handlePointerUp);
+    this.canvas.removeEventListener('pointercancel', this.handlePointerUp);
+    this.canvas.removeEventListener('dblclick', this.resetView);
   }
 
+  zoomIn(): void {
+    const focusCar = this.lastState?.cars.find((car) => car.isPlayer && !car.finished) ?? this.lastState?.cars[0];
+    if (!focusCar) {
+      this.setZoom(this.zoom * 1.35, 500, 310);
+      return;
+    }
+    const focus = this.geometry.at(focusCar.distance / this.track.length, focusCar.laneOffset);
+    this.zoom = Math.max(1, Math.min(4, this.zoom * 1.35));
+    this.cameraX = focus.x;
+    this.cameraY = focus.y;
+    this.clampCamera();
+    this.onZoomChange(this.zoom);
+  }
+
+  zoomOut(): void {
+    this.setZoom(this.zoom / 1.35, 500, 310);
+  }
+
+  resetView = (): void => {
+    this.zoom = 1;
+    this.cameraX = 500;
+    this.cameraY = 310;
+    this.onZoomChange(this.zoom);
+  };
+
   draw(state: RaceState): void {
+    this.lastState = state;
     const context = this.context;
     const scaleX = this.canvas.width / 1000;
     const scaleY = this.canvas.height / 620;
-    context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-    context.clearRect(0, 0, 1000, 620);
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    context.setTransform(
+      scaleX * this.zoom,
+      0,
+      0,
+      scaleY * this.zoom,
+      scaleX * (500 - this.cameraX * this.zoom),
+      scaleY * (310 - this.cameraY * this.zoom),
+    );
     this.drawBackground(context);
     this.drawTrack(context);
     this.drawCars(context, state);
@@ -41,6 +96,65 @@ export class TrackCanvas {
     const density = Math.min(2, window.devicePixelRatio || 1);
     this.canvas.width = Math.max(1, Math.round(rect.width * density));
     this.canvas.height = Math.max(1, Math.round(rect.height * density));
+  }
+
+  private handleWheel = (event: WheelEvent): void => {
+    event.preventDefault();
+    const point = this.canvasPoint(event.clientX, event.clientY);
+    this.setZoom(this.zoom * (event.deltaY < 0 ? 1.16 : 1 / 1.16), point.x, point.y);
+  };
+
+  private handlePointerDown = (event: PointerEvent): void => {
+    if (event.button !== 0 || this.zoom <= 1) return;
+    this.dragging = true;
+    this.pointerX = event.clientX;
+    this.pointerY = event.clientY;
+    this.canvas.setPointerCapture(event.pointerId);
+    this.canvas.classList.add('is-dragging');
+  };
+
+  private handlePointerMove = (event: PointerEvent): void => {
+    if (!this.dragging) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const deltaX = ((event.clientX - this.pointerX) / Math.max(1, rect.width)) * 1000;
+    const deltaY = ((event.clientY - this.pointerY) / Math.max(1, rect.height)) * 620;
+    this.cameraX -= deltaX / this.zoom;
+    this.cameraY -= deltaY / this.zoom;
+    this.pointerX = event.clientX;
+    this.pointerY = event.clientY;
+    this.clampCamera();
+  };
+
+  private handlePointerUp = (event: PointerEvent): void => {
+    if (!this.dragging) return;
+    this.dragging = false;
+    if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+    this.canvas.classList.remove('is-dragging');
+  };
+
+  private canvasPoint(clientX: number, clientY: number): Point {
+    const rect = this.canvas.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / Math.max(1, rect.width)) * 1000,
+      y: ((clientY - rect.top) / Math.max(1, rect.height)) * 620,
+    };
+  }
+
+  private setZoom(nextZoom: number, anchorX: number, anchorY: number): void {
+    const worldX = this.cameraX + (anchorX - 500) / this.zoom;
+    const worldY = this.cameraY + (anchorY - 310) / this.zoom;
+    this.zoom = Math.max(1, Math.min(4, nextZoom));
+    this.cameraX = worldX - (anchorX - 500) / this.zoom;
+    this.cameraY = worldY - (anchorY - 310) / this.zoom;
+    this.clampCamera();
+    this.onZoomChange(this.zoom);
+  }
+
+  private clampCamera(): void {
+    const halfWidth = 500 / this.zoom;
+    const halfHeight = 310 / this.zoom;
+    this.cameraX = Math.max(halfWidth, Math.min(1000 - halfWidth, this.cameraX));
+    this.cameraY = Math.max(halfHeight, Math.min(620 - halfHeight, this.cameraY));
   }
 
   private drawBackground(context: CanvasRenderingContext2D): void {
@@ -101,11 +215,12 @@ export class TrackCanvas {
     for (const car of drawOrder) {
       const progress = car.distance / this.track.length;
       const position = this.geometry.at(progress, car.laneOffset);
+      const radiusScale = 1 / Math.sqrt(this.zoom);
       context.save();
       context.translate(position.x, position.y);
       if (car.isPlayer) {
         context.beginPath();
-        context.arc(0, 0, 18, 0, Math.PI * 2);
+        context.arc(0, 0, 18 * radiusScale, 0, Math.PI * 2);
         context.fillStyle = `${car.color}35`;
         context.fill();
       }
@@ -113,19 +228,53 @@ export class TrackCanvas {
       context.shadowBlur = 8;
       context.shadowOffsetY = 3;
       context.beginPath();
-      context.arc(0, 0, car.isPlayer ? 13 : 11, 0, Math.PI * 2);
+      context.arc(0, 0, (car.isPlayer ? 13 : 11) * radiusScale, 0, Math.PI * 2);
       context.fillStyle = car.color;
       context.fill();
-      context.lineWidth = 2.5;
+      context.lineWidth = 2.5 * radiusScale;
       context.strokeStyle = car.isPlayer ? '#fff' : TYRES[car.tyreType].color;
       context.stroke();
       context.shadowColor = 'transparent';
       context.fillStyle = '#071015';
-      context.font = `800 ${car.number > 9 ? 8.5 : 10}px Inter, sans-serif`;
+      context.font = `800 ${(car.number > 9 ? 8.5 : 10) * radiusScale}px Inter, sans-serif`;
       context.textAlign = 'center';
       context.textBaseline = 'middle';
       context.fillText(String(car.number), 0, 0.5);
       context.restore();
     }
+    if (this.zoom >= 1.35) this.drawDistanceLabels(context, state);
+  }
+
+  private drawDistanceLabels(context: CanvasRenderingContext2D, state: RaceState): void {
+    const inverseZoom = 1 / this.zoom;
+    state.cars.forEach((car, index) => {
+      if (index === 0 || car.finished) return;
+      const carAhead = state.cars[index - 1];
+      const gap = Math.max(0, carAhead.distance - car.distance);
+      const label = gap >= this.track.length
+        ? `+${Math.floor(gap / this.track.length)} volta`
+        : `${Math.round(gap)} m`;
+      const position = this.geometry.at(car.distance / this.track.length, car.laneOffset);
+      const width = (label.length * 5.2 + 12) * inverseZoom;
+      const height = 16 * inverseZoom;
+      const labelSide = index % 2 === 0 ? -1 : 1;
+      const labelTier = Math.floor(index / 2) % 3;
+      const y = labelSide * (25 + labelTier * 14) * inverseZoom;
+      context.save();
+      context.translate(position.x, position.y);
+      context.fillStyle = 'rgba(7, 10, 14, .86)';
+      context.strokeStyle = car.isPlayer ? car.color : 'rgba(255,255,255,.28)';
+      context.lineWidth = inverseZoom;
+      context.beginPath();
+      context.roundRect(-width / 2, y - height / 2, width, height, 3 * inverseZoom);
+      context.fill();
+      context.stroke();
+      context.fillStyle = '#f5f7fa';
+      context.font = `800 ${8 * inverseZoom}px Inter, sans-serif`;
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(label, 0, y + .5 * inverseZoom);
+      context.restore();
+    });
   }
 }

@@ -34,6 +34,12 @@ export class RaceView {
           <canvas class="race-canvas" aria-label="Visualização da corrida"></canvas>
           <div class="live-badge"><i></i> AO VIVO</div>
           <div class="event-toast" data-event></div>
+          <div class="camera-tools" aria-label="Controles de zoom">
+            <button type="button" data-camera="zoom-out" aria-label="Diminuir zoom">−</button>
+            <button type="button" class="zoom-readout" data-camera="reset" data-zoom aria-label="Enquadrar pista">100%</button>
+            <button type="button" data-camera="zoom-in" aria-label="Aumentar zoom">＋</button>
+          </div>
+          <div class="camera-hint">RODA: ZOOM · ARRASTE: MOVER · DUPLO CLIQUE: AJUSTAR</div>
           <div class="track-data">
             <span>${(engine.track.length / 1000).toFixed(2)} KM</span><span>${engine.track.corners} CURVAS</span><span>${Math.round(engine.track.averageSpeed)} KM/H MÉDIA</span>
           </div>
@@ -61,7 +67,7 @@ export class RaceView {
       </footer>
     `;
     const canvas = this.element.querySelector<HTMLCanvasElement>('canvas')!;
-    this.renderer = new TrackCanvas(canvas, engine.track);
+    this.renderer = new TrackCanvas(canvas, engine.track, (zoom) => this.updateZoomReadout(zoom));
     engine.state.cars.filter((car) => car.isPlayer).forEach((car) => this.pitSelections.set(car.id, car.tyreType));
 
     this.element.querySelector('[data-exit]')?.addEventListener('click', onExit);
@@ -103,6 +109,13 @@ export class RaceView {
   private handleClick(event: Event): void {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!button) return;
+    const cameraAction = button.dataset.camera;
+    if (cameraAction) {
+      if (cameraAction === 'zoom-in') this.renderer.zoomIn();
+      if (cameraAction === 'zoom-out') this.renderer.zoomOut();
+      if (cameraAction === 'reset') this.renderer.resetView();
+      return;
+    }
     if (button.dataset.speed !== undefined) {
       const speed = Number(button.dataset.speed) as SimulationSpeed;
       if (speed === 0) {
@@ -132,6 +145,11 @@ export class RaceView {
   private handleChange(event: Event): void {
     const select = (event.target as HTMLElement).closest<HTMLSelectElement>('select[data-pit-tyre]');
     if (select?.dataset.carId) this.pitSelections.set(select.dataset.carId, select.value as TyreType);
+  }
+
+  private updateZoomReadout(zoom: number): void {
+    const readout = this.element.querySelector<HTMLElement>('[data-zoom]');
+    if (readout) readout.textContent = `${Math.round(zoom * 100)}%`;
   }
 
   private renderHud(): void {

@@ -25,4 +25,5 @@ npm run preview
 - pneus macio, médio e duro, modos de ritmo e pit stops;
 - adversários com habilidade, consistência e estratégia de pneus;
 - classificação ao vivo, velocidades 1×/2×/4×, pausa e resultado completo;
+- câmera com zoom de 1× a 4×, movimentação por arraste e distância em metros entre os carros;
 - preferências e última configuração persistidas no `localStorage`.
