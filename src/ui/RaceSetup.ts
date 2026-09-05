@@ -130,7 +130,7 @@ function drawTrackPreviews(container: HTMLElement, tracks: Track[]): void {
   container.querySelectorAll<HTMLElement>('[data-track-preview]').forEach((preview) => {
     const track = tracks.find((item) => item.id === preview.dataset.trackPreview);
     if (!track) return;
-    const svgPoints = track.points.map((point) => `${point.x},${point.y}`).join(' ');
+    const svgPoints = [...track.points, track.points[0]].map((point) => `${point.x},${point.y}`).join(' ');
     preview.innerHTML = `<svg viewBox="50 45 900 540" aria-hidden="true"><polyline points="${svgPoints}" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/><line x1="${track.points[0].x - 15}" y1="${track.points[0].y}" x2="${track.points[0].x + 15}" y2="${track.points[0].y}" stroke="white" stroke-width="8"/></svg>`;
   });
 }

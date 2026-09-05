@@ -236,17 +236,25 @@ input[type="range"] { width: 100%; accent-color: var(--red); }
 .creator-toolbar strong { margin-right: 4px; color: #68717e; font-size: 6px; letter-spacing: .1em; }
 .creator-toolbar button { height: 27px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; color: #959eaa; background: #0b1016; font-size: 6px; font-weight: 900; cursor: pointer; }
 .creator-toolbar button:hover { color: white; border-color: rgba(255,255,255,.3); }
-.builder-preview { min-height: 330px; background: radial-gradient(circle, #17231f, #0b1210); }
+.creator-toolbar .close-track-button { border-color: rgba(255,51,79,.5); color: #ff7387; }
+.creator-toolbar .close-track-button.is-active { border-color: #5ae4b0; color: #5ae4b0; background: rgba(90,228,176,.08); }
+.builder-preview { position: relative; min-height: 330px; background: radial-gradient(circle, #17231f, #0b1210); }
+.builder-preview::after { content: 'ARRASTE OS PONTOS PARA MODELAR A PISTA'; position: absolute; left: 50%; bottom: 10px; padding: 5px 8px; border: 1px solid rgba(255,255,255,.1); border-radius: 3px; color: #7f8a97; background: rgba(7,10,14,.72); font-size: 6px; font-weight: 900; letter-spacing: .12em; transform: translateX(-50%); pointer-events: none; }
 .builder-preview svg { display: block; width: 100%; height: 100%; min-height: 330px; }
 .preview-shadow, .preview-road, .preview-line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .preview-shadow { stroke: rgba(0,0,0,.6); stroke-width: 64; }
 .preview-road { stroke: #404751; stroke-width: 48; }
 .preview-line { stroke: rgba(255,255,255,.28); stroke-width: 2; stroke-dasharray: 5 13; }
+.draggable-node { cursor: grab; transition: r .14s, fill .14s; touch-action: none; }
+.draggable-node:hover, .draggable-node:focus { r: 11px; fill: white; outline: none; }
+.draggable-node.is-dragging { cursor: grabbing; r: 13px; fill: #ffbdc7; }
 .block-node { fill: #8b96a4; stroke: #121820; stroke-width: 3; }
 .start-node { fill: var(--red); stroke: white; stroke-width: 4; filter: drop-shadow(0 0 8px var(--red)); }
 .preview-legend { display: flex; justify-content: flex-end; gap: 15px; padding: 7px 10px; border-top: 1px solid var(--line); color: #697381; font-size: 6px; font-weight: 900; letter-spacing: .09em; }
 .preview-legend span:first-child { margin-right: auto; }
 .preview-legend i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--red); }
+.preview-legend strong { color: #ff7589; font-size: 6px; }
+.preview-legend strong.is-closed { color: #5ae4b0; }
 .block-sequence { min-height: 72px; max-height: 118px; display: flex; gap: 4px; align-content: flex-start; flex-wrap: wrap; overflow-y: auto; padding: 9px; border-top: 1px solid var(--line); background: #0b1016; }
 .block-sequence > button { height: 28px; display: flex; align-items: center; gap: 5px; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; color: #aeb6c1; background: #171d25; font-size: 6px; cursor: pointer; }
 .block-sequence > button:hover { border-color: #ff667b; }

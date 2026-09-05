@@ -36,6 +36,7 @@ export interface BlockTrackOptions {
   overtakeChance: number;
   accent: string;
   source: 'blocks' | 'custom';
+  points?: Point[];
 }
 
 export function pointsFromBlocks(blocks: TrackBlockType[]): Point[] {
@@ -72,7 +73,7 @@ export function createTrackFromBlocks(options: BlockTrackOptions): Track {
     tyreWear: options.tyreWear,
     overtakeChance: options.overtakeChance,
     accent: options.accent,
-    points: pointsFromBlocks(options.blocks),
+    points: options.points?.map((point) => ({ ...point })) ?? pointsFromBlocks(options.blocks),
     source: options.source,
     blocks: [...options.blocks],
   };

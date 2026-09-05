@@ -23,4 +23,15 @@ describe('block track builder', () => {
     expect(track.points).toEqual(pointsFromBlocks(blocks));
     expect(track.corners).toBeGreaterThan(3);
   });
+
+  it('usa os pontos modelados pelo jogador sem recalcular o formato', () => {
+    const blocks = TRACK_TEMPLATES[0].blocks;
+    const modeledPoints = pointsFromBlocks(blocks).map((point, index) => ({ ...point, y: point.y + (index % 2) * 25 }));
+    const track = createTrackFromBlocks({
+      id: 'modeled-test', name: 'Modelada', location: 'Oficina', description: 'Formato editado', blocks,
+      points: modeledPoints, length: 2800, averageSpeed: 175, tyreWear: 1, overtakeChance: 0.55, accent: '#20d7ff', source: 'custom',
+    });
+    expect(track.points).toEqual(modeledPoints);
+    expect(track.points).not.toBe(modeledPoints);
+  });
 });
