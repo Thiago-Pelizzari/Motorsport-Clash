@@ -16,6 +16,7 @@ export class RaceView {
   private finishedNotified = false;
   private lastSpeed: Exclude<SimulationSpeed, 0> = 1;
   private readonly pitSelections = new Map<string, TyreType>();
+  private strategyInteractionUntil = 0;
 
   constructor(engine: RaceEngine, onExit: () => void, onFinished: (engine: RaceEngine) => void) {
     this.engine = engine;
@@ -71,6 +72,11 @@ export class RaceView {
     engine.state.cars.filter((car) => car.isPlayer).forEach((car) => this.pitSelections.set(car.id, car.tyreType));
 
     this.element.querySelector('[data-exit]')?.addEventListener('click', onExit);
+    this.element.addEventListener('pointerdown', (event) => {
+      if ((event.target as HTMLElement).closest('[data-strategy-panels]')) {
+        this.strategyInteractionUntil = performance.now() + 600;
+      }
+    });
     this.element.addEventListener('click', (event) => this.handleClick(event));
     this.element.addEventListener('change', (event) => this.handleChange(event));
     this.engine.start();
@@ -133,11 +139,19 @@ export class RaceView {
     }
     const carId = button.dataset.carId;
     const strategy = button.dataset.strategy as StrategyMode | undefined;
-    if (carId && strategy) this.engine.setStrategy(carId, strategy);
+    if (carId && strategy) {
+      this.engine.setStrategy(carId, strategy);
+      this.strategyInteractionUntil = 0;
+      this.renderStrategyPanels(true);
+      return;
+    }
     if (carId && button.dataset.action === 'pit') {
       const car = this.engine.state.cars.find((item) => item.id === carId);
       if (car?.pendingPitTyre) this.engine.cancelPitStop(carId);
       else this.engine.requestPitStop(carId, this.pitSelections.get(carId) ?? 'medium');
+      this.strategyInteractionUntil = 0;
+      this.renderStrategyPanels(true);
+      return;
     }
     this.renderHud();
   }
@@ -194,10 +208,11 @@ export class RaceView {
     }).join('');
   }
 
-  private renderStrategyPanels(): void {
+  private renderStrategyPanels(force = false): void {
     const container = this.element.querySelector<HTMLElement>('[data-strategy-panels]');
     if (!container) return;
-    if (document.activeElement instanceof HTMLSelectElement && container.contains(document.activeElement)) return;
+    if (!force && performance.now() < this.strategyInteractionUntil) return;
+    if (!force && document.activeElement instanceof HTMLSelectElement && container.contains(document.activeElement)) return;
     container.innerHTML = this.engine.state.cars.filter((car) => car.isPlayer).map((car) => {
       const tyre = TYRES[car.tyreType];
       const pitSelection = this.pitSelections.get(car.id) ?? 'medium';
