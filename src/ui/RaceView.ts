@@ -17,6 +17,9 @@ export class RaceView {
   private lastSpeed: Exclude<SimulationSpeed, 0> = 1;
   private readonly pitSelections = new Map<string, TyreType>();
   private strategyInteractionUntil = 0;
+  private leaderboardInteractionUntil = 0;
+  private selectedCarId: string | null = null;
+  private followingSelectedCar = false;
 
   constructor(engine: RaceEngine, onExit: () => void, onFinished: (engine: RaceEngine) => void) {
     this.engine = engine;
@@ -36,11 +39,13 @@ export class RaceView {
           <div class="live-badge"><i></i> AO VIVO</div>
           <div class="event-toast" data-event></div>
           <div class="camera-tools" aria-label="Controles de zoom">
+            <button type="button" data-camera="follow" data-follow-toggle aria-label="Seguir piloto selecionado" disabled>◎</button>
             <button type="button" data-camera="zoom-out" aria-label="Diminuir zoom">−</button>
             <button type="button" class="zoom-readout" data-camera="reset" data-zoom aria-label="Enquadrar pista">100%</button>
             <button type="button" data-camera="zoom-in" aria-label="Aumentar zoom">＋</button>
           </div>
-          <div class="camera-hint">RODA: ZOOM · ARRASTE: MOVER · DUPLO CLIQUE: AJUSTAR</div>
+          <div class="camera-follow-status" data-follow-status hidden><i></i><span>SEGUINDO</span><b></b></div>
+          <div class="camera-hint">CLIQUE NO RANKING: SEGUIR · ARRASTE: LIBERAR CÂMERA</div>
           <div class="track-data">
             <span>${(engine.track.length / 1000).toFixed(2)} KM</span><span>${engine.track.corners} CURVAS</span><span>${Math.round(engine.track.averageSpeed)} KM/H MÉDIA</span>
           </div>
@@ -68,14 +73,24 @@ export class RaceView {
       </footer>
     `;
     const canvas = this.element.querySelector<HTMLCanvasElement>('canvas')!;
-    this.renderer = new TrackCanvas(canvas, engine.track, (zoom) => this.updateZoomReadout(zoom));
+    this.renderer = new TrackCanvas(
+      canvas,
+      engine.track,
+      (zoom) => this.updateZoomReadout(zoom),
+      (following) => {
+        this.followingSelectedCar = following;
+        this.updateFollowUi();
+      },
+    );
     engine.state.cars.filter((car) => car.isPlayer).forEach((car) => this.pitSelections.set(car.id, car.tyreType));
 
     this.element.querySelector('[data-exit]')?.addEventListener('click', onExit);
     this.element.addEventListener('pointerdown', (event) => {
-      if ((event.target as HTMLElement).closest('[data-strategy-panels]')) {
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-strategy-panels]')) {
         this.strategyInteractionUntil = performance.now() + 600;
       }
+      if (target.closest('[data-select-car]')) this.leaderboardInteractionUntil = performance.now() + 600;
     });
     this.element.addEventListener('click', (event) => this.handleClick(event));
     this.element.addEventListener('change', (event) => this.handleChange(event));
@@ -120,6 +135,15 @@ export class RaceView {
       if (cameraAction === 'zoom-in') this.renderer.zoomIn();
       if (cameraAction === 'zoom-out') this.renderer.zoomOut();
       if (cameraAction === 'reset') this.renderer.resetView();
+      if (cameraAction === 'follow' && this.selectedCarId) {
+        if (this.followingSelectedCar) this.renderer.stopFollowing();
+        else this.renderer.followCar(this.selectedCarId);
+      }
+      return;
+    }
+    const selectedCarId = button.dataset.selectCar;
+    if (selectedCarId) {
+      this.selectPilot(selectedCarId);
       return;
     }
     if (button.dataset.speed !== undefined) {
@@ -181,6 +205,7 @@ export class RaceView {
     }
     this.renderLeaderboard();
     this.renderStrategyPanels();
+    this.updateFollowUi();
     this.element.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((button) => {
       const speed = Number(button.dataset.speed);
       button.classList.toggle('is-active', speed === state.simulationSpeed || (speed === 0 && state.simulationSpeed === 0));
@@ -188,9 +213,10 @@ export class RaceView {
     });
   }
 
-  private renderLeaderboard(): void {
+  private renderLeaderboard(force = false): void {
     const container = this.element.querySelector<HTMLElement>('[data-leaderboard]');
     if (!container) return;
+    if (!force && performance.now() < this.leaderboardInteractionUntil) return;
     const leader = this.engine.state.cars[0];
     const leaderTime = leader.finishTime ?? leader.totalTime;
     container.innerHTML = this.engine.state.cars.map((car) => {
@@ -199,12 +225,12 @@ export class RaceView {
       const gap = car.finished && leader.finished ? (car.finishTime ?? leaderTime) - leaderTime : estimatedGap;
       const status = car.pitTimeRemaining > 0 ? 'BOX' : car.finished ? 'FIM' : formatGap(gap);
       return `
-        <div class="leader-row ${car.isPlayer ? 'is-player' : ''}">
+        <button type="button" class="leader-row ${car.isPlayer ? 'is-player' : ''} ${car.id === this.selectedCarId ? 'is-selected' : ''}" data-select-car="${car.id}" aria-label="Selecionar e seguir ${car.name}, carro ${car.number}">
           <strong>${car.position}</strong>
           <span class="leader-dot" style="--car-color:${car.color}">${car.number}</span>
           <div><b>${car.name}</b><small>V${Math.min(this.engine.state.totalLaps, car.lap + 1)} · ${TYRES[car.tyreType].label}${car.collisionCooldown > 0 ? ' · CONTATO' : ''}</small></div>
           <time>${status}</time>
-        </div>`;
+        </button>`;
     }).join('');
   }
 
@@ -236,5 +262,33 @@ export class RaceView {
           </div>
         </article>`;
     }).join('');
+  }
+
+  private selectPilot(carId: string): void {
+    if (!this.engine.state.cars.some((car) => car.id === carId)) return;
+    this.selectedCarId = carId;
+    this.followingSelectedCar = true;
+    this.leaderboardInteractionUntil = 0;
+    this.renderer.followCar(carId);
+    this.renderLeaderboard(true);
+    this.updateFollowUi();
+  }
+
+  private updateFollowUi(): void {
+    const car = this.engine.state.cars.find((candidate) => candidate.id === this.selectedCarId);
+    const toggle = this.element.querySelector<HTMLButtonElement>('[data-follow-toggle]');
+    if (toggle) {
+      toggle.disabled = !car;
+      toggle.classList.toggle('is-active', Boolean(car && this.followingSelectedCar));
+      toggle.title = car
+        ? this.followingSelectedCar ? `Parar de seguir #${car.number}` : `Seguir #${car.number}`
+        : 'Selecione um piloto no leaderboard';
+    }
+    const status = this.element.querySelector<HTMLElement>('[data-follow-status]');
+    if (status) {
+      status.hidden = !car || !this.followingSelectedCar;
+      const label = status.querySelector<HTMLElement>('b');
+      if (label && car) label.textContent = `#${car.number} · ${car.name}`;
+    }
   }
 }

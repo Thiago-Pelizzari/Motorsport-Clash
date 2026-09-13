@@ -27,6 +27,7 @@ npm run preview
 - linhas de corrida dinâmicas por piloto e colisões com separação, perda de velocidade e condição;
 - classificação ao vivo, velocidades 1×/2×/4×, pausa e resultado completo;
 - câmera com zoom de 1× a 4×, movimentação por arraste e distância em metros entre os carros;
+- câmera de acompanhamento com seleção de qualquer piloto pelo leaderboard;
 - criador de pistas por blocos com retas, curvas, cotovelos e chicanes, além de três modelos prontos;
 - traçado aberto durante a montagem, fechamento manual e modelagem por pontos arrastáveis;
 - pistas personalizadas salvas localmente e disponíveis diretamente no criador de corridas;
