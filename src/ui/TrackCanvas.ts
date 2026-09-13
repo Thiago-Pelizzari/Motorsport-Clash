@@ -1,6 +1,7 @@
 import { GAME_CONFIG, TYRES } from '../game/gameConfig';
 import { TrackGeometry } from '../game/TrackGeometry';
 import type { Point, RaceState, Track } from '../types/race';
+import { separateMarkers } from './MarkerLayout';
 
 export class TrackCanvas {
   private readonly canvas: HTMLCanvasElement;
@@ -212,10 +213,20 @@ export class TrackCanvas {
 
   private drawCars(context: CanvasRenderingContext2D, state: RaceState): void {
     const drawOrder = [...state.cars].sort((a, b) => Number(a.isPlayer) - Number(b.isPlayer));
+    const radiusScale = 1 / Math.sqrt(this.zoom);
+    const markerPositions = separateMarkers(drawOrder.map((car) => {
+      const position = this.geometry.at(car.distance / this.track.length, car.laneOffset);
+      return {
+        id: car.id,
+        x: position.x,
+        y: position.y,
+        radius: (car.isPlayer ? 13 : 11) * radiusScale,
+        raceDistance: car.distance,
+      };
+    }), this.track.length);
+    const positionByCar = new Map(markerPositions.map((position) => [position.id, position]));
     for (const car of drawOrder) {
-      const progress = car.distance / this.track.length;
-      const position = this.geometry.at(progress, car.laneOffset);
-      const radiusScale = 1 / Math.sqrt(this.zoom);
+      const position = positionByCar.get(car.id)!;
       context.save();
       context.translate(position.x, position.y);
       if (car.collisionCooldown > 0) {

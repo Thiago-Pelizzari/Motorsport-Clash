@@ -42,6 +42,30 @@ describe('CollisionSystem', () => {
     cars[1].laneOffset = 17;
     expect(resolveCarCollisions(cars, track.length)).toHaveLength(0);
   });
+
+  it('resolve um grupo compacto sem deixar pares fisicamente sobrepostos', () => {
+    const { cars, track } = testCars();
+    const base = cars[0];
+    const group = Array.from({ length: 5 }, (_, index) => ({
+      ...structuredClone(base),
+      id: `group-${index}`,
+      position: index + 1,
+      distance: 120 - index * 2,
+      laneOffset: 0,
+      targetLaneOffset: 0,
+      collisionCooldown: 0,
+    }));
+
+    resolveCarCollisions(group, track.length);
+
+    for (let first = 0; first < group.length; first += 1) {
+      for (let second = first + 1; second < group.length; second += 1) {
+        const longitudinal = Math.abs(group[first].distance - group[second].distance) / 16;
+        const lateral = Math.abs(group[first].laneOffset - group[second].laneOffset) / 20;
+        expect(longitudinal ** 2 + lateral ** 2).toBeGreaterThanOrEqual(0.94);
+      }
+    }
+  });
 });
 
 describe('RacingLineSystem', () => {

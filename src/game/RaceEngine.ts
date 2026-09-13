@@ -146,12 +146,16 @@ export class RaceEngine {
     const advantage = car.speed - ahead.speed + (car.driver.skill - ahead.driver.skill) * 18;
     const chance = this.track.overtakeChance * car.driver.aggression * Math.max(0.05, 0.35 + advantage / 30);
     const side = Math.sin(car.variationPhase + car.lap * 1.7 + this.state.elapsedTime * 0.09) >= 0 ? 1 : -1;
+    const laneLimit = GAME_CONFIG.maximumLaneOffset ?? 17;
+    const lateralGap = Math.abs(car.laneOffset - ahead.laneOffset);
+    if (gap < (GAME_CONFIG.collisionDistanceMetres ?? 16) * 1.45 && lateralGap < (GAME_CONFIG.collisionLaneDistance ?? 20)) {
+      car.targetLaneOffset = Math.max(-laneLimit, Math.min(laneLimit, ahead.laneOffset + side * 18));
+      return 0.91;
+    }
     if (this.random.next() < chance * deltaTime) {
-      const laneLimit = GAME_CONFIG.maximumLaneOffset ?? 17;
       car.targetLaneOffset = Math.max(-laneLimit, Math.min(laneLimit, ahead.laneOffset + side * 16));
       return 1.018;
     }
-    const laneLimit = GAME_CONFIG.maximumLaneOffset ?? 17;
     car.targetLaneOffset = Math.max(-laneLimit, Math.min(laneLimit, ahead.laneOffset + side * 4));
     return GAME_CONFIG.trafficSpeedPenalty;
   }
