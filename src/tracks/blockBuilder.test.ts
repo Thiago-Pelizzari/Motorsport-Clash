@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { TrackGeometry } from '../game/TrackGeometry';
 import { BLOCK_TRACKS, TRACK_TEMPLATES } from './blockTracks';
-import { createTrackFromBlocks, pointsFromBlocks, trackArea } from './blockBuilder';
+import {
+  createTrackFromBlocks,
+  estimateTrackMetrics,
+  hasSelfIntersection,
+  pointsFromBlocks,
+  trackArea,
+} from './blockBuilder';
 
 describe('block track builder', () => {
   it('gera três modelos fechados, diversos e com área útil', () => {
@@ -33,5 +40,34 @@ describe('block track builder', () => {
     });
     expect(track.points).toEqual(modeledPoints);
     expect(track.points).not.toBe(modeledPoints);
+  });
+
+  it('suporta novos blocos (grampos e esse), estima métricas e detecta auto-interseção', () => {
+    const blocks = ['straight', 'hairpinRight', 'sCurve', 'hairpinLeft'] as const;
+    const pts = pointsFromBlocks([...blocks]);
+    const metrics = estimateTrackMetrics([...blocks], pts);
+    expect(metrics.length).toBeGreaterThanOrEqual(1400);
+    expect(metrics.corners).toBe(7);
+
+    const cleanSquare = [
+      { x: 100, y: 100 },
+      { x: 400, y: 100 },
+      { x: 400, y: 400 },
+      { x: 100, y: 400 },
+    ];
+    const figureEight = [
+      { x: 100, y: 100 },
+      { x: 400, y: 400 },
+      { x: 400, y: 100 },
+      { x: 100, y: 400 },
+    ];
+    expect(hasSelfIntersection(cleanSquare, true)).toBe(false);
+    expect(hasSelfIntersection(figureEight, true)).toBe(true);
+  });
+
+  it('calcula curvatura local e ápices de curva na geometria de pista', () => {
+    const geometry = new TrackGeometry(BLOCK_TRACKS[0]);
+    expect(geometry.cornerApexes.length).toBeGreaterThanOrEqual(4);
+    expect(geometry.speedFactorAt(0)).toBeGreaterThan(0.6);
   });
 });

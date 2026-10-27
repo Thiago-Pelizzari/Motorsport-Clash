@@ -14,7 +14,9 @@ export interface CollisionEvent {
 }
 
 export function resolveCarCollisions(cars: CarState[], trackLength: number): CollisionEvent[] {
-  const activeCars = cars.filter((car) => !car.finished && car.pitTimeRemaining <= 0 && car.distance >= 0);
+  const activeCars = cars.filter(
+    (car) => !car.finished && car.pitTimeRemaining <= 0 && car.pitState !== 'stationary' && car.distance >= 0,
+  );
   const events: CollisionEvent[] = [];
   const registeredContacts = new Set<string>();
 
@@ -69,7 +71,7 @@ export function resolveCarCollisions(cars: CarState[], trackLength: number): Col
   return events;
 }
 
-function signedTrackGap(firstDistance: number, secondDistance: number, trackLength: number): number {
+export function signedTrackGap(firstDistance: number, secondDistance: number, trackLength: number): number {
   let gap = ((firstDistance - secondDistance) % trackLength + trackLength) % trackLength;
   if (gap > trackLength / 2) gap -= trackLength;
   return gap;

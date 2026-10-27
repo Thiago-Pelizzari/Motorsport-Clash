@@ -7,9 +7,12 @@ export const DEFAULT_SETTINGS: RaceSettings = {
   laps: 5,
   competitors: 10,
   difficulty: 'normal',
+  teamName: 'Equipe Apex',
+  weatherPreset: 'clear',
+  qualifyingMode: 'front_row',
   playerCars: [
-    { number: 44, tyre: 'soft' },
-    { number: 16, tyre: 'medium' },
+    { number: 44, tyre: 'soft', driverName: 'Você · Equipe Apex' },
+    { number: 16, tyre: 'medium', driverName: 'Você · Equipe Nova' },
   ],
 };
 
@@ -19,7 +22,14 @@ export function loadSettings(): RaceSettings {
     if (!raw) return structuredClone(DEFAULT_SETTINGS);
     const value = JSON.parse(raw) as Partial<RaceSettings>;
     if (!value.playerCars || value.playerCars.length !== 2) return structuredClone(DEFAULT_SETTINGS);
-    return { ...structuredClone(DEFAULT_SETTINGS), ...value } as RaceSettings;
+    return {
+      ...structuredClone(DEFAULT_SETTINGS),
+      ...value,
+      playerCars: [
+        { ...DEFAULT_SETTINGS.playerCars[0], ...value.playerCars[0] },
+        { ...DEFAULT_SETTINGS.playerCars[1], ...value.playerCars[1] },
+      ],
+    } as RaceSettings;
   } catch {
     return structuredClone(DEFAULT_SETTINGS);
   }

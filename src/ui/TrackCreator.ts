@@ -1,7 +1,17 @@
+import { soundEngine } from '../audio/SoundEngine';
+import { smoothSvgPoints } from '../game/TrackGeometry';
 import { deleteCustomTrack, loadCustomTracks, saveCustomTrack } from '../storage/trackStorage';
-import { BLOCK_DEFINITIONS, createTrackFromBlocks, pointsFromBlocks, trackArea } from '../tracks/blockBuilder';
+import {
+  BLOCK_DEFINITIONS,
+  createTrackFromBlocks,
+  estimateTrackMetrics,
+  hasSelfIntersection,
+  pointsFromBlocks,
+  trackArea,
+} from '../tracks/blockBuilder';
 import { TRACK_TEMPLATES } from '../tracks/blockTracks';
 import type { Track, TrackBlockType } from '../types/race';
+import { escapeHtml } from '../utils/dom';
 
 const BLOCK_TYPES = Object.keys(BLOCK_DEFINITIONS) as TrackBlockType[];
 const MAX_BLOCKS = 32;
@@ -18,12 +28,12 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
   screen.innerHTML = `
     <header class="topbar">
       <button class="icon-button" type="button" data-action="back" aria-label="Voltar">←</button>
-      <div><span class="eyebrow">Oficina de circuitos</span><h1>Criador de pistas</h1></div>
-      <div class="step-marker">BLOCK LAB / 01</div>
+      <div><span class="eyebrow">Oficina de circuitos 2.0</span><h1>Criador de pistas</h1></div>
+      <div class="step-marker">BLOCK LAB / 02</div>
     </header>
     <section class="creator-intro">
-      <div><span class="eyebrow">Monte · teste · corra</span><h2>Construa um traçado bloco a bloco</h2></div>
-      <p>Combine retas, curvas e chicanes sem fechamento automático. Arraste os pontos para modelar o traçado e feche a pista somente quando estiver pronta.</p>
+      <div><span class="eyebrow">Monte · modele · corra</span><h2>Construa um traçado com spline em tempo real</h2></div>
+      <p>Combine retas, curvas, grampos e chicanes. Arraste os nós para modelar a curva Catmull-Rom real e use o cálculo automático de telemetria.</p>
     </section>
     <div class="creator-layout">
       <aside class="block-palette creator-panel">
@@ -38,14 +48,26 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
       <section class="creator-workspace creator-panel">
         <div class="creator-toolbar">
           <div><strong>MODELOS</strong>${TRACK_TEMPLATES.map((template) => `<button type="button" data-template="${template.id}">${template.name}</button>`).join('')}</div>
-          <div><button type="button" data-action="undo">↶ DESFAZER</button><button type="button" data-action="clear">LIMPAR</button><button type="button" class="close-track-button" data-action="toggle-close">FECHAR PISTA</button></div>
+          <div>
+            <button type="button" data-action="add-node" title="Inserir um novo ponto de modelagem">+ PONTO</button>
+            <button type="button" data-action="undo">↶ DESFAZER</button>
+            <button type="button" data-action="clear">LIMPAR</button>
+            <button type="button" class="close-track-button" data-action="toggle-close">FECHAR PISTA</button>
+          </div>
         </div>
         <div class="builder-preview" data-builder-preview></div>
-        <div class="preview-legend"><span><i></i>LARGADA</span><strong data-track-state></strong><span data-block-count></span><span data-corner-count></span></div>
+        <div class="preview-legend">
+          <span><i></i>LARGADA</span>
+          <strong data-track-state></strong>
+          <span data-intersection-state></span>
+          <span data-block-count></span>
+          <span data-corner-count></span>
+        </div>
         <div class="block-sequence" data-block-sequence aria-label="Sequência de blocos"></div>
       </section>
       <aside class="track-properties creator-panel">
-        <div class="creator-panel-title"><span>02</span><div><h3>PROPRIEDADES</h3><small>IDENTIDADE E BALANCEAMENTO</small></div></div>
+        <div class="creator-panel-title"><span>02</span><div><h3>PROPRIEDADES</h3><small>IDENTIDADE E TELEMETRIA</small></div></div>
+        <button type="button" class="auto-metrics-btn" data-action="auto-metrics">⚡ CALCULAR TELEMETRIA DO TRAÇADO</button>
         <label>NOME DA PISTA<input name="track-name" maxlength="32" value="Minha Pista"></label>
         <label>COMPRIMENTO<input name="track-length" type="number" min="1000" max="8000" step="10" value="3200"><small>metros</small></label>
         <label>VELOCIDADE MÉDIA<input name="average-speed" type="number" min="120" max="240" value="180"><small>km/h</small></label>
@@ -63,6 +85,16 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
       <div class="saved-track-grid" data-saved-tracks></div>
     </section>
   `;
+
+  const applyEstimatedMetrics = (): void => {
+    if (modelPoints.length < 3) return;
+    const metrics = estimateTrackMetrics(blocks, modelPoints);
+    screen.querySelector<HTMLInputElement>('input[name="track-length"]')!.value = String(metrics.length);
+    screen.querySelector<HTMLInputElement>('input[name="average-speed"]')!.value = String(metrics.averageSpeed);
+    screen.querySelector<HTMLSelectElement>('select[name="tyre-wear"]')!.value = String(metrics.tyreWear);
+    screen.querySelector<HTMLInputElement>('input[name="overtake"]')!.value = String(metrics.overtakeChance);
+    screen.querySelector<HTMLOutputElement>('[data-overtake-output]')!.value = `${metrics.overtakeChance}%`;
+  };
 
   const renderEditor = (): void => {
     const preview = screen.querySelector<HTMLElement>('[data-builder-preview]')!;
@@ -82,6 +114,12 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
     const trackState = screen.querySelector<HTMLElement>('[data-track-state]')!;
     trackState.textContent = isClosed ? '● PISTA FECHADA' : '○ PISTA ABERTA';
     trackState.classList.toggle('is-closed', isClosed);
+
+    const intersects = hasSelfIntersection(modelPoints, isClosed);
+    const interEl = screen.querySelector<HTMLElement>('[data-intersection-state]')!;
+    interEl.textContent = intersects ? '⚠ CRUZAMENTO' : '✓ GEOMETRIA OK';
+    interEl.style.color = intersects ? '#ffb627' : '#5ae4b0';
+
     const closeButton = screen.querySelector<HTMLButtonElement>('[data-action="toggle-close"]')!;
     closeButton.textContent = isClosed ? 'ABRIR PISTA' : 'FECHAR PISTA';
     closeButton.classList.toggle('is-active', isClosed);
@@ -104,19 +142,48 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
     if (!button) return;
     if (button.dataset.action === 'back') onBack();
     const blockType = button.dataset.addBlock as TrackBlockType | undefined;
-    if (blockType && blocks.length < MAX_BLOCKS) { blocks.push(blockType); rebuildShape(false); }
-    if (button.dataset.removeBlock !== undefined) { blocks.splice(Number(button.dataset.removeBlock), 1); rebuildShape(false); }
+    if (blockType && blocks.length < MAX_BLOCKS) {
+      blocks.push(blockType);
+      rebuildShape(false);
+      soundEngine.playUiClick();
+    }
+    if (button.dataset.removeBlock !== undefined) {
+      blocks.splice(Number(button.dataset.removeBlock), 1);
+      rebuildShape(false);
+      soundEngine.playUiClick();
+    }
     const templateId = button.dataset.template;
     if (templateId) {
       const template = TRACK_TEMPLATES.find((item) => item.id === templateId);
-      if (template) { blocks = [...template.blocks]; rebuildShape(true); setMessage(`${template.name} carregado e fechado. Arraste os pontos para modelar.`, false); }
+      if (template) {
+        blocks = [...template.blocks];
+        rebuildShape(true);
+        applyEstimatedMetrics();
+        setMessage(`${template.name} carregado e fechado. Arraste os pontos para modelar.`, false);
+        soundEngine.playUiClick();
+      }
+    }
+    if (button.dataset.action === 'add-node' && modelPoints.length >= 2) {
+      insertMidpointNode();
+      renderEditor();
+      setMessage('Novo ponto de controle inserido no segmento mais longo.', false);
+      soundEngine.playUiClick();
+    }
+    if (button.dataset.action === 'auto-metrics') {
+      applyEstimatedMetrics();
+      setMessage('Telemetria calculada automaticamente a partir da geometria do traçado.', false);
+      soundEngine.playUiClick();
     }
     if (button.dataset.action === 'undo') { blocks.pop(); rebuildShape(false); }
     if (button.dataset.action === 'clear') { blocks = []; rebuildShape(false); }
-    if (button.dataset.action === 'toggle-close') { isClosed = !isClosed; renderEditor(); }
+    if (button.dataset.action === 'toggle-close') { isClosed = !isClosed; renderEditor(); soundEngine.playUiClick(); }
     if (button.dataset.action === 'save') saveTrack();
     if (button.dataset.useTrack) onUseTrack(button.dataset.useTrack);
-    if (button.dataset.deleteTrack) { deleteCustomTrack(button.dataset.deleteTrack); renderSavedTracks(); setMessage('Pista removida.', false); }
+    if (button.dataset.deleteTrack) {
+      deleteCustomTrack(button.dataset.deleteTrack);
+      renderSavedTracks();
+      setMessage('Pista removida.', false);
+    }
   });
 
   screen.addEventListener('pointerdown', (event) => {
@@ -155,6 +222,27 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
     screen.querySelector<HTMLOutputElement>('[data-overtake-output]')!.value = `${(event.currentTarget as HTMLInputElement).value}%`;
   });
 
+  function insertMidpointNode(): void {
+    let bestIndex = 0;
+    let maxDist = -1;
+    const count = isClosed ? modelPoints.length : modelPoints.length - 1;
+    for (let i = 0; i < count; i += 1) {
+      const a = modelPoints[i];
+      const b = modelPoints[(i + 1) % modelPoints.length];
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      if (d > maxDist) {
+        maxDist = d;
+        bestIndex = i;
+      }
+    }
+    const a = modelPoints[bestIndex];
+    const b = modelPoints[(bestIndex + 1) % modelPoints.length];
+    modelPoints.splice(bestIndex + 1, 0, {
+      x: Math.round((a.x + b.x) / 2),
+      y: Math.round((a.y + b.y) / 2),
+    });
+  }
+
   function saveTrack(): void {
     const name = screen.querySelector<HTMLInputElement>('input[name="track-name"]')!.value.trim();
     const turns = blocks.filter((type) => BLOCK_DEFINITIONS[type].steps.some((step) => step.turn !== 0)).length;
@@ -183,6 +271,7 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
     });
     saveCustomTrack(track);
     renderSavedTracks();
+    soundEngine.playRadioBeep();
     setMessage(`${safeName} foi salva e já pode ser usada.`, false);
   }
 
@@ -194,8 +283,7 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
 
   function previewPathPoints(): string {
     if (modelPoints.length === 0) return '';
-    const visiblePoints = isClosed ? [...modelPoints, modelPoints[0]] : modelPoints;
-    return visiblePoints.map((point) => `${point.x},${point.y}`).join(' ');
+    return smoothSvgPoints(modelPoints, isClosed, 10);
   }
 
   function updatePreviewGeometry(): void {
@@ -204,6 +292,12 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
     const point = draggingPoint === null ? null : modelPoints[draggingPoint];
     const node = draggingPoint === null ? null : screen.querySelector<SVGCircleElement>(`[data-point-index="${draggingPoint}"]`);
     if (point && node) { node.setAttribute('cx', String(point.x)); node.setAttribute('cy', String(point.y)); }
+    const intersects = hasSelfIntersection(modelPoints, isClosed);
+    const interEl = screen.querySelector<HTMLElement>('[data-intersection-state]');
+    if (interEl) {
+      interEl.textContent = intersects ? '⚠ CRUZAMENTO' : '✓ GEOMETRIA OK';
+      interEl.style.color = intersects ? '#ffb627' : '#5ae4b0';
+    }
   }
 
   function numberInput(name: string, minimum: number, maximum: number): number {
@@ -223,11 +317,14 @@ export function renderTrackCreator(onBack: () => void, onUseTrack: (trackId: str
 }
 
 function savedTrackCard(track: Track): string {
-  const points = [...track.points, track.points[0]].map((point) => `${point.x},${point.y}`).join(' ');
-  return `<article class="saved-track-card" style="--track-accent:${track.accent}">
+  const points = smoothSvgPoints(track.points, true, 10);
+  const safeName = escapeHtml(track.name);
+  const safeAccent = escapeHtml(track.accent);
+  const safeId = escapeHtml(track.id);
+  return `<article class="saved-track-card" style="--track-accent:${safeAccent}">
     <svg viewBox="0 0 1000 620" aria-hidden="true"><polyline points="${points}"/></svg>
-    <div><span>PISTA PERSONALIZADA</span><h4>${track.name}</h4><small>${(track.length / 1000).toFixed(2)} km · ${track.corners} curvas · ${track.blocks?.length ?? 0} blocos</small></div>
-    <button type="button" data-use-track="${track.id}">USAR NA CORRIDA →</button>
-    <button type="button" class="delete-track" data-delete-track="${track.id}" aria-label="Excluir ${track.name}">×</button>
+    <div><span>PISTA PERSONALIZADA</span><h4>${safeName}</h4><small>${(track.length / 1000).toFixed(2)} km · ${track.corners} curvas · ${track.blocks?.length ?? 0} blocos</small></div>
+    <button type="button" data-use-track="${safeId}">USAR NA CORRIDA →</button>
+    <button type="button" class="delete-track" data-delete-track="${safeId}" aria-label="Excluir ${safeName}">×</button>
   </article>`;
 }

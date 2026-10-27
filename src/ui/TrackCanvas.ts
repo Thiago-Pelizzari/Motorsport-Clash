@@ -1,7 +1,7 @@
-import { GAME_CONFIG, TYRES } from '../game/gameConfig';
+import { FLAG_CONFIG, GAME_CONFIG, TYRES } from '../game/gameConfig';
 import { TrackGeometry } from '../game/TrackGeometry';
 import type { Point, RaceState, Track } from '../types/race';
-import { separateMarkers } from './MarkerLayout';
+import { separateMarkers, type MarkerPosition } from './MarkerLayout';
 
 interface VisualCarState {
   previousDistance: number;
@@ -20,19 +20,30 @@ export class TrackCanvas {
   private readonly track: Track;
   private readonly onZoomChange: (zoom: number) => void;
   private readonly onFollowChange: (following: boolean) => void;
+  private readonly onSelectCar?: (carId: string) => void;
   private resizeObserver: ResizeObserver;
   private zoom = 1;
   private cameraX = 500;
   private cameraY = 310;
   private dragging = false;
+  private dragMoved = false;
+  private pointerDownX = 0;
+  private pointerDownY = 0;
   private pointerX = 0;
   private pointerY = 0;
   private lastState: RaceState | null = null;
+  private lastRenderedMarkers: MarkerPosition[] = [];
   private selectedCarId: string | null = null;
   private followingSelectedCar = false;
   private readonly visualCars = new Map<string, VisualCarState>();
 
-  constructor(canvas: HTMLCanvasElement, track: Track, onZoomChange: (zoom: number) => void, onFollowChange: (following: boolean) => void) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    track: Track,
+    onZoomChange: (zoom: number) => void,
+    onFollowChange: (following: boolean) => void,
+    onSelectCar?: (carId: string) => void,
+  ) {
     this.canvas = canvas;
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Canvas 2D não disponível');
@@ -40,6 +51,7 @@ export class TrackCanvas {
     this.track = track;
     this.onZoomChange = onZoomChange;
     this.onFollowChange = onFollowChange;
+    this.onSelectCar = onSelectCar;
     this.geometry = new TrackGeometry(track);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -113,24 +125,38 @@ export class TrackCanvas {
 
   draw(state: RaceState): void {
     this.lastState = state;
-    this.updateVisualCars(state, performance.now());
+    const now = performance.now();
+    this.updateVisualCars(state, now);
     this.updateFollowCamera(state);
+
     const context = this.context;
-    const scaleX = this.canvas.width / 1000;
-    const scaleY = this.canvas.height / 620;
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    const baseScale = Math.min(width / 1000, height / 620);
+    const effectiveScale = baseScale * this.zoom;
+
     context.setTransform(1, 0, 0, 1, 0, 0);
-    context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    context.clearRect(0, 0, width, height);
+    this.drawScreenBackground(context, width, height, state);
+
     context.setTransform(
-      scaleX * this.zoom,
+      effectiveScale,
       0,
       0,
-      scaleY * this.zoom,
-      scaleX * (500 - this.cameraX * this.zoom),
-      scaleY * (310 - this.cameraY * this.zoom),
+      effectiveScale,
+      width / 2 - this.cameraX * effectiveScale,
+      height / 2 - this.cameraY * effectiveScale,
     );
-    this.drawBackground(context);
-    this.drawTrack(context);
+
+    this.drawWorldGrid(context);
+    this.drawPitLane(context);
+    this.drawTrack(context, state);
     this.drawCars(context, state);
+
+    if (state.weather.rainIntensity > 0.05) {
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      this.drawRainOverlay(context, width, height, state.weather.rainIntensity, now);
+    }
   }
 
   private resize(): void {
@@ -147,20 +173,35 @@ export class TrackCanvas {
   };
 
   private handlePointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 || this.zoom <= 1) return;
-    this.stopFollowing();
-    this.dragging = true;
+    if (event.button !== 0) return;
+    this.pointerDownX = event.clientX;
+    this.pointerDownY = event.clientY;
     this.pointerX = event.clientX;
     this.pointerY = event.clientY;
-    this.canvas.setPointerCapture(event.pointerId);
-    this.canvas.classList.add('is-dragging');
+    this.dragMoved = false;
+
+    if (this.zoom > 1) {
+      this.dragging = true;
+      this.canvas.setPointerCapture(event.pointerId);
+    }
   };
 
   private handlePointerMove = (event: PointerEvent): void => {
     if (!this.dragging) return;
+    const moveDist = Math.hypot(event.clientX - this.pointerDownX, event.clientY - this.pointerDownY);
+    if (moveDist > 5) {
+      if (!this.dragMoved) {
+        this.dragMoved = true;
+        this.stopFollowing();
+        this.canvas.classList.add('is-dragging');
+      }
+    }
+    if (!this.dragMoved) return;
+
     const rect = this.canvas.getBoundingClientRect();
-    const deltaX = ((event.clientX - this.pointerX) / Math.max(1, rect.width)) * 1000;
-    const deltaY = ((event.clientY - this.pointerY) / Math.max(1, rect.height)) * 620;
+    const baseScale = Math.min(rect.width / 1000, rect.height / 620);
+    const deltaX = (event.clientX - this.pointerX) / Math.max(0.1, baseScale);
+    const deltaY = (event.clientY - this.pointerY) / Math.max(0.1, baseScale);
     this.cameraX -= deltaX / this.zoom;
     this.cameraY -= deltaY / this.zoom;
     this.pointerX = event.clientX;
@@ -169,17 +210,48 @@ export class TrackCanvas {
   };
 
   private handlePointerUp = (event: PointerEvent): void => {
-    if (!this.dragging) return;
-    this.dragging = false;
-    if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
-    this.canvas.classList.remove('is-dragging');
+    if (this.dragging) {
+      this.dragging = false;
+      if (this.canvas.hasPointerCapture(event.pointerId)) {
+        this.canvas.releasePointerCapture(event.pointerId);
+      }
+      this.canvas.classList.remove('is-dragging');
+    }
+
+    // Direct click on car marker to select & follow
+    const moveDist = Math.hypot(event.clientX - this.pointerDownX, event.clientY - this.pointerDownY);
+    if (moveDist <= 5 && this.onSelectCar && this.lastRenderedMarkers.length > 0) {
+      const worldPt = this.screenToWorld(event.clientX, event.clientY);
+      const hitRadius = 18 / Math.sqrt(this.zoom);
+      let closestId: string | null = null;
+      let closestDist = hitRadius;
+      for (const marker of this.lastRenderedMarkers) {
+        const d = Math.hypot(marker.x - worldPt.x, marker.y - worldPt.y);
+        if (d <= closestDist) {
+          closestDist = d;
+          closestId = marker.id;
+        }
+      }
+      if (closestId) {
+        this.onSelectCar(closestId);
+      }
+    }
   };
 
   private canvasPoint(clientX: number, clientY: number): Point {
     const rect = this.canvas.getBoundingClientRect();
+    const baseScale = Math.min(rect.width / 1000, rect.height / 620);
     return {
-      x: ((clientX - rect.left) / Math.max(1, rect.width)) * 1000,
-      y: ((clientY - rect.top) / Math.max(1, rect.height)) * 620,
+      x: 500 + (clientX - (rect.left + rect.width / 2)) / Math.max(0.1, baseScale),
+      y: 310 + (clientY - (rect.top + rect.height / 2)) / Math.max(0.1, baseScale),
+    };
+  }
+
+  private screenToWorld(clientX: number, clientY: number): Point {
+    const anchor = this.canvasPoint(clientX, clientY);
+    return {
+      x: this.cameraX + (anchor.x - 500) / this.zoom,
+      y: this.cameraY + (anchor.y - 310) / this.zoom,
     };
   }
 
@@ -205,8 +277,10 @@ export class TrackCanvas {
     const car = state.cars.find((candidate) => candidate.id === this.selectedCarId);
     if (!car) return;
     const target = this.carPosition(car);
-    this.cameraX = target.x;
-    this.cameraY = target.y;
+    const reducedMotion = document.documentElement.classList.contains('reduced-motion');
+    const lerpFactor = reducedMotion ? 1 : 0.25;
+    this.cameraX += (target.x - this.cameraX) * lerpFactor;
+    this.cameraY += (target.y - this.cameraY) * lerpFactor;
     this.clampCamera();
   }
 
@@ -254,46 +328,124 @@ export class TrackCanvas {
     return this.geometry.at(distance / this.track.length, laneOffset);
   }
 
-  private drawBackground(context: CanvasRenderingContext2D): void {
-    const gradient = context.createRadialGradient(520, 310, 40, 520, 310, 620);
-    gradient.addColorStop(0, '#17251f');
-    gradient.addColorStop(1, '#09100e');
+  private drawScreenBackground(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    state: RaceState,
+  ): void {
+    const gradient = context.createRadialGradient(width * 0.52, height * 0.5, 30, width * 0.52, height * 0.5, Math.max(width, height) * 0.75);
+    const isWet = state.weather.trackWetness > 0.2;
+    gradient.addColorStop(0, isWet ? '#132028' : '#17251f');
+    gradient.addColorStop(1, isWet ? '#070d12' : '#09100e');
     context.fillStyle = gradient;
-    context.fillRect(0, 0, 1000, 620);
+    context.fillRect(0, 0, width, height);
+  }
+
+  private drawWorldGrid(context: CanvasRenderingContext2D): void {
     context.strokeStyle = 'rgba(255,255,255,.025)';
     context.lineWidth = 1;
-    for (let x = 0; x < 1000; x += 40) { context.beginPath(); context.moveTo(x, 0); context.lineTo(x, 620); context.stroke(); }
-    for (let y = 0; y < 620; y += 40) { context.beginPath(); context.moveTo(0, y); context.lineTo(1000, y); context.stroke(); }
+    for (let x = -200; x <= 1200; x += 40) {
+      context.beginPath();
+      context.moveTo(x, -200);
+      context.lineTo(x, 820);
+      context.stroke();
+    }
+    for (let y = -200; y <= 820; y += 40) {
+      context.beginPath();
+      context.moveTo(-200, y);
+      context.lineTo(1200, y);
+      context.stroke();
+    }
   }
 
   private path(context: CanvasRenderingContext2D): void {
     context.beginPath();
-    this.geometry.samples.forEach((point, index) => index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y));
+    this.geometry.samples.forEach((point, index) => (index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y)));
     context.closePath();
   }
 
-  private drawTrack(context: CanvasRenderingContext2D): void {
+  private drawPitLane(context: CanvasRenderingContext2D): void {
+    const pitOffset = GAME_CONFIG.pitLaneOffset ?? 24;
+    context.save();
+    context.beginPath();
+    const steps = 28;
+    for (let i = 0; i <= steps; i += 1) {
+      const progress = (0.91 + (i / steps) * 0.16) % 1;
+      const edgeBlend = i < 5 ? i / 5 : i > steps - 5 ? (steps - i) / 5 : 1;
+      const point = this.geometry.at(progress, pitOffset * edgeBlend);
+      if (i === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    }
+    context.strokeStyle = '#252a32';
+    context.lineWidth = 14;
+    context.lineCap = 'round';
+    context.stroke();
+
+    context.strokeStyle = 'rgba(255, 182, 39, 0.45)';
+    context.lineWidth = 1.5;
+    context.setLineDash([4, 4]);
+    context.stroke();
+    context.setLineDash([]);
+
+    const boxPos = this.geometry.at(0.995, pitOffset);
+    context.fillStyle = '#141920';
+    context.strokeStyle = this.track.accent;
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.arc(boxPos.x, boxPos.y, 7, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.restore();
+  }
+
+  private drawTrack(context: CanvasRenderingContext2D, state: RaceState): void {
     context.lineJoin = 'round';
     context.lineCap = 'round';
+
+    // Track outer shadow / runoff
     this.path(context);
-    context.strokeStyle = 'rgba(0,0,0,.55)';
-    context.lineWidth = 70;
+    context.strokeStyle = 'rgba(0,0,0,.58)';
+    context.lineWidth = 72;
     context.stroke();
+
+    // Track border / shoulders
     this.path(context);
-    context.strokeStyle = '#343941';
+    context.strokeStyle = state.flag !== 'green' ? `${FLAG_CONFIG[state.flag].color}66` : '#343941';
     context.lineWidth = 58;
     context.stroke();
+
+    // Main asphalt surface
     this.path(context);
-    context.strokeStyle = '#444a53';
+    const wetness = state.weather.trackWetness;
+    context.strokeStyle = wetness > 0.3 ? '#323c47' : '#444a53';
     context.lineWidth = 44;
     context.stroke();
+
+    // Wet sheen highlight
+    if (wetness > 0.08) {
+      this.path(context);
+      context.strokeStyle = `rgba(110, 195, 255, ${(wetness * 0.18).toFixed(3)})`;
+      context.lineWidth = 34;
+      context.stroke();
+    }
+
+    // Corner Kerbs (Zebras)
+    this.drawCornerKerbs(context);
+
+    // Center dashed line
     this.path(context);
-    context.strokeStyle = 'rgba(255,255,255,.2)';
+    context.strokeStyle = 'rgba(255,255,255,.19)';
     context.setLineDash([4, 15]);
     context.lineWidth = 1.5;
     context.stroke();
     context.setLineDash([]);
 
+    // Sector timing markers (S1 at 1/3, S2 at 2/3)
+    this.drawSectorLine(context, 1 / 3, 'S1');
+    this.drawSectorLine(context, 2 / 3, 'S2');
+
+    // Start / Finish checkered line
     const start = this.geometry.at(0);
     context.save();
     context.translate(start.x, start.y);
@@ -307,24 +459,90 @@ export class TrackCanvas {
     context.restore();
   }
 
+  private drawCornerKerbs(context: CanvasRenderingContext2D): void {
+    context.save();
+    for (const apex of this.geometry.cornerApexes) {
+      const kerbOffset = apex.sign * 21;
+      const stripeCount = 5;
+      for (let s = -stripeCount; s <= stripeCount; s += 1) {
+        const p1 = this.geometry.at(apex.progress + s * 0.0032, kerbOffset);
+        const p2 = this.geometry.at(apex.progress + (s + 0.85) * 0.0032, kerbOffset);
+        context.beginPath();
+        context.moveTo(p1.x, p1.y);
+        context.lineTo(p2.x, p2.y);
+        context.strokeStyle = Math.abs(s) % 2 === 0 ? this.track.accent : '#f4f6f8';
+        context.lineWidth = 4.2;
+        context.stroke();
+      }
+    }
+    context.restore();
+  }
+
+  private drawSectorLine(context: CanvasRenderingContext2D, progress: number, label: string): void {
+    const pos = this.geometry.at(progress, 0);
+    context.save();
+    context.translate(pos.x, pos.y);
+    context.rotate(pos.angle);
+    context.strokeStyle = 'rgba(255, 255, 255, 0.32)';
+    context.lineWidth = 1.5;
+    context.beginPath();
+    context.moveTo(0, -22);
+    context.lineTo(0, 22);
+    context.stroke();
+
+    context.rotate(-pos.angle);
+    const badgePos = this.geometry.at(progress, -32);
+    context.fillStyle = 'rgba(10, 14, 20, 0.82)';
+    context.fillRect(badgePos.x - pos.x - 10, badgePos.y - pos.y - 6, 20, 12);
+    context.fillStyle = '#9aa4b2';
+    context.font = '800 7px Inter, sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText(label, badgePos.x - pos.x, badgePos.y - pos.y + 0.5);
+    context.restore();
+  }
+
   private drawCars(context: CanvasRenderingContext2D, state: RaceState): void {
     const drawOrder = [...state.cars].sort((a, b) => Number(a.isPlayer) - Number(b.isPlayer));
     const radiusScale = 1 / Math.sqrt(this.zoom);
-    const markerPositions = separateMarkers(drawOrder.map((car) => {
-      const position = this.carPosition(car);
-      return {
-        id: car.id,
-        x: position.x,
-        y: position.y,
-        radius: (car.isPlayer ? 13 : 11) * radiusScale,
-        raceDistance: car.distance,
-      };
-    }), this.track.length);
+    const markerPositions = separateMarkers(
+      drawOrder.map((car) => {
+        const position = this.carPosition(car);
+        return {
+          id: car.id,
+          x: position.x,
+          y: position.y,
+          radius: (car.isPlayer ? 13 : 11) * radiusScale,
+          raceDistance: car.distance,
+        };
+      }),
+      this.track.length,
+    );
+    this.lastRenderedMarkers = markerPositions;
     const positionByCar = new Map(markerPositions.map((position) => [position.id, position]));
+
     for (const car of drawOrder) {
       const position = positionByCar.get(car.id)!;
+      const trackPos = this.geometry.at(car.distance / this.track.length, car.laneOffset);
       context.save();
       context.translate(position.x, position.y);
+
+      // Water spray in wet conditions
+      if (state.weather.trackWetness > 0.22 && car.speed > 60 && car.pitTimeRemaining <= 0) {
+        const sprayAngle = trackPos.angle + Math.PI;
+        context.fillStyle = `rgba(185, 225, 255, ${(state.weather.trackWetness * 0.28).toFixed(2)})`;
+        context.beginPath();
+        context.arc(
+          Math.cos(sprayAngle) * 14 * radiusScale,
+          Math.sin(sprayAngle) * 14 * radiusScale,
+          9 * radiusScale,
+          0,
+          Math.PI * 2,
+        );
+        context.fill();
+      }
+
+      // Selected car dashed ring
       if (car.id === this.selectedCarId) {
         context.beginPath();
         context.arc(0, 0, 22 * radiusScale, 0, Math.PI * 2);
@@ -334,6 +552,25 @@ export class TrackCanvas {
         context.stroke();
         context.setLineDash([]);
       }
+
+      // Fastest lap holder purple ring
+      if (state.fastestLapCarId === car.id) {
+        context.beginPath();
+        context.arc(0, 0, 19.5 * radiusScale, 0, Math.PI * 2);
+        context.strokeStyle = '#c264ff';
+        context.lineWidth = 2 * radiusScale;
+        context.stroke();
+      }
+
+      // ERS Deploy active ring
+      if (car.ersDeploy && car.ersCharge > 0.05) {
+        context.beginPath();
+        context.arc(0, 0, 17 * radiusScale, 0, Math.PI * 2);
+        context.strokeStyle = '#38f8b2';
+        context.lineWidth = 2 * radiusScale;
+        context.stroke();
+      }
+
       if (car.collisionCooldown > 0) {
         const collisionLife = car.collisionCooldown / (GAME_CONFIG.collisionCooldown ?? 0.75);
         context.globalAlpha = Math.max(0.2, collisionLife);
@@ -343,7 +580,7 @@ export class TrackCanvas {
         context.lineWidth = 3 * radiusScale;
         context.stroke();
         for (let spark = 0; spark < 5; spark += 1) {
-          const sparkAngle = car.variationPhase + spark * (Math.PI * 2 / 5);
+          const sparkAngle = car.variationPhase + spark * ((Math.PI * 2) / 5);
           context.beginPath();
           context.moveTo(Math.cos(sparkAngle) * 16 * radiusScale, Math.sin(sparkAngle) * 16 * radiusScale);
           context.lineTo(Math.cos(sparkAngle) * 24 * radiusScale, Math.sin(sparkAngle) * 24 * radiusScale);
@@ -351,12 +588,14 @@ export class TrackCanvas {
         }
         context.globalAlpha = 1;
       }
+
       if (car.isPlayer) {
         context.beginPath();
         context.arc(0, 0, 18 * radiusScale, 0, Math.PI * 2);
         context.fillStyle = `${car.color}35`;
         context.fill();
       }
+
       context.shadowColor = 'rgba(0,0,0,.65)';
       context.shadowBlur = 8;
       context.shadowOffsetY = 3;
@@ -384,9 +623,10 @@ export class TrackCanvas {
       if (index === 0 || car.finished) return;
       const carAhead = state.cars[index - 1];
       const gap = Math.max(0, carAhead.distance - car.distance);
-      const label = gap >= this.track.length
+      const baseLabel = gap >= this.track.length
         ? `+${Math.floor(gap / this.track.length)} volta`
         : `${Math.round(gap)} m`;
+      const label = car.pendingPitTyre ? `${baseLabel} · BOX` : car.inSlipstream ? `${baseLabel} · DRS` : baseLabel;
       const position = this.carPosition(car);
       const width = (label.length * 5.2 + 12) * inverseZoom;
       const height = 16 * inverseZoom;
@@ -406,8 +646,32 @@ export class TrackCanvas {
       context.font = `800 ${8 * inverseZoom}px Inter, sans-serif`;
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      context.fillText(label, 0, y + .5 * inverseZoom);
+      context.fillText(label, 0, y + 0.5 * inverseZoom);
       context.restore();
     });
+  }
+
+  private drawRainOverlay(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    intensity: number,
+    now: number,
+  ): void {
+    if (document.documentElement.classList.contains('reduced-motion')) return;
+    const dropCount = Math.round(45 * intensity);
+    context.save();
+    context.strokeStyle = `rgba(175, 215, 255, ${(0.18 + intensity * 0.16).toFixed(2)})`;
+    context.lineWidth = 1.2;
+    context.beginPath();
+    const t = now * 0.85;
+    for (let i = 0; i < dropCount; i += 1) {
+      const x = ((i * 197 + t * 0.4) % (width + 80)) - 40;
+      const y = ((i * 311 + t * 1.3) % (height + 80)) - 40;
+      context.moveTo(x, y);
+      context.lineTo(x - 7, y + 22);
+    }
+    context.stroke();
+    context.restore();
   }
 }

@@ -1,6 +1,6 @@
-# Apex Strategy
+# Apex Strategy 2.0
 
-Jogo offline de gerenciamento de corridas automobilísticas, construído com TypeScript, Vite e Canvas 2D. Os carros correm automaticamente; o jogador gerencia ritmo, pneus e pit stops de uma equipe com dois carros.
+Simulador tático offline de gerenciamento de corridas automobilísticas, construído com TypeScript, Vite e Canvas 2D. Os carros correm automaticamente; o jogador atua como estrategista-chefe gerenciando ritmo, compostos de pneus, temperatura, bateria ERS, combustível e pit stops de uma escuderia com dois carros.
 
 ## Executar
 
@@ -9,26 +9,24 @@ npm install
 npm run dev
 ```
 
-Para gerar a versão offline de produção:
+Para validar os testes automatizados e gerar a versão offline de produção:
 
 ```bash
+npm test
 npm run build
 npm run preview
 ```
 
-## Recursos do MVP
+## Recursos (Edição 2.0)
 
-- três circuitos fictícios com geometrias e características próprias;
-- corridas de 1 a 100 voltas, com 2 a 20 competidores;
-- dois carros configuráveis pelo jogador, sem números duplicados;
-- motor independente da interface e baseado em `deltaTime`;
-- pneus macio, médio e duro, modos de ritmo e pit stops;
-- adversários com habilidade, consistência e estratégia de pneus;
-- linhas de corrida dinâmicas por piloto e colisões com separação, perda de velocidade e condição;
-- classificação ao vivo, velocidades 1×/2×/4×, pausa e resultado completo;
-- câmera com zoom de 1× a 4×, movimentação por arraste e distância em metros entre os carros;
-- câmera de acompanhamento com seleção de qualquer piloto pelo leaderboard;
-- criador de pistas por blocos com retas, curvas, cotovelos e chicanes, além de três modelos prontos;
-- traçado aberto durante a montagem, fechamento manual e modelagem por pontos arrastáveis;
-- pistas personalizadas salvas localmente e disponíveis diretamente no criador de corridas;
-- preferências e última configuração persistidas no `localStorage`.
+- **Física de Pista Realista:** velocidade dinâmica baseada na curvatura local da spline Catmull-Rom (frenagens fortes em curvas, aceleração em retas, vácuo/slipstream, ar sujo e linha de corrida *out-in-out*);
+- **5 Compostos de Pneus & Temperatura:** Macio (`S`), Médio (`M`), Duro (`H`), Intermediário (`I`) e Chuva (`W`), com janela térmica de operação e desgaste dinâmico;
+- **Combustível Ativo & Bateria ERS:** consumo de combustível que deixa o carro mais leve volta a volta e sistema de recuperação/descarga de energia (`⚡ ERS`) para ataque e defesa;
+- **Clima Dinâmico & Bandeiras:** transição entre pista seca, nublada, chuva leve e tempestade com acúmulo de água no asfalto, previsão meteorológica no HUD, Bandeira Amarela e Virtual Safety Car (`VSC`);
+- **Pit Lane Físico & Reparos:** entrada e saída de box com limite de velocidade, via de pit lane desenhada na pista e opção de reparo de avarias (`🔧`);
+- **IA Estratégica 2.0:** equipes rivais com dois carros, arquétipos de piloto, cálculo de janela de stint, *undercut* no tráfego, bandeira azul para retardatários e resposta imediata à chuva;
+- **Modo Campeonato (Temporada):** calendário de 3, 6 ou 9 etapas com tabela oficial de pontos para o Mundial de Pilotos e Mundial de Construtores;
+- **Definição de Grid & Customização de Equipe:** qualificação simulada, primeira fila, grid sorteado ou desafio de fundo de pelotão, além de nomes customizáveis para escuderia e pilotos;
+- **Telemetria S1·S2·S3, Rádio e Pós-Corrida Analítico:** histórico de rádio da corrida, gráfico SVG de evolução de posições volta a volta, histórico de stints de pneus e prêmios de Volta Mais Rápida, Piloto do Dia e Melhor Pit Stop;
+- **Oficina de Pistas 2.0:** 11 tipos de blocos (incluindo Grampos 180° e Esse Rápido), prévia em spline Catmull-Rom real, inserção de nós extras, detector de auto-interseção e cálculo automático de telemetria;
+- **Áudio Procedural Web Audio API:** efeitos sintetizados em tempo real para rádio da equipe, pit stops, volta rápida e chegada, sem necessidade de arquivos de áudio externos.
